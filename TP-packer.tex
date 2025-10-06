@@ -1,0 +1,138 @@
+% !TEX root = TP-packer.tex
+\input{../inc/encommun.tex}
+
+\usepackage{titlepic}
+\title{Construisez vos briques de bases Cloud avec "Packer"}
+\titlepic{\includegraphics[width=0.2\textwidth]{logo-cloudlab-red.png}}
+
+\date{octobre 2024}
+
+% pour afficher (ou pas) les réponses dans le document
+%\printanswers
+\noprintanswers
+
+\usepackage{graphicx}
+\graphicspath{{./images/}}
+
+
+\author{Jean-Marc Pouchoulon}
+%\author{\IEEEauthorblockN{Jean-Marc Pouchoulon}
+%\IEEEauthorblockA{Département Réseaux et Télécoms\\
+%IUT Béziers\\
+%Université de Montpellier\\
+%Email: jean-marc.pouchoulon@iutbeziers.fr}}
+
+% pour afficher ( ou pas) les réponses dans le document
+%\printanswers
+
+
+\begin{document}
+\maketitle
+\section{Avant de commencer}
+
+\subsection{Pré-requis, recommandations et notation du TP.}
+
+Vous devez avoir Docker, VirtualBox et KVM/libvirt installés sur votre machine afin de réaliser ce TP.
+Le source est bâti pour fonctionner avec VirtualBox 7.
+
+Vous pouvez utiliser la version 6 de VirtualBox mais il faudra modifier
+le fichier de configuration en retirant 
+["modifyvm", "{{ .Name }}", "--nat-localhostreachable1", "on"]]
+de la ligne commençant par "vboxmanage..."
+
+
+\section{Installation de Packer}
+
+Installez Packer en suivant \href{https://developer.hashicorp.com/packer/tutorials/docker-get-started/get-started-install-cli}{la procédure officielle}
+
+Installez les plugins suivants:
+\begin{bashcode}
+packer plugins install github.com/hashicorp/virtualbox
+packer plugins install github.com/hashicorp/qemu
+packer plugins install github.com/hashicorp/docker
+\end{bashcode}
+
+\section{Réalisez votre premier build d'une image Docker avec Packer}
+
+Buildez votre premier container avec cet exemple de build sur le site officiel de Packer : \url{https://www.packer.io/intro/getting-started/build-image.html}
+
+\section{Premier build d'une VM avec Packer}
+Récupérez votre VM Debian avec cette \href{https://github.com/pushou/AMORCE-TP-PACKER-R5-devcloud-11.git}{première configuration}.
+et buildez votre VM avec Packer. (Vous serez amenés à mettre à jour le checksum et la version de Debian)
+Répondez ensuite aux questions suivantes relation au fichier .hcl:
+\begin{questions}
+    \question Quel est le bloc essentiel de cette configuration ?
+    \question A quoi sert le block plugin ?
+    \question Que lance le block build ?
+    \question A quoi sert la variable "checksum" ?
+    \question Que lance la "bootcommand" ? 
+    \question A quoi sert le fichier preseed.cfg ?
+    \question Lors du build que lance packer afin de se servir du fichier ?
+    \begin{solution}
+        \begin{itemize}
+            \item \textbf{bloc build} : C’est le bloc essentiel qui indique quelles sont les actions à mener pour construire l’image machine 
+            finale. Dans ce bloc, vous avez la possibilité de renseigner des providers (source) et les provisonners. 
+            \item \textbf{bloc source} : Ce bloc permet de configurer l’environnement cible où sera construite l’instance. 
+            \item \textbf{bloc variables}: définit les variables utilisées dans le template
+            \item \textbf{bloc provisioner} : permet de configurer les actions à mener sur l’instance avant de la packeriser.
+        \end{itemize}
+    \end{solution}
+    \question Quel est le provisionner utilisé ?   
+    \question Quel est le format de la VM générée ?
+    \question Que font chacun des scripts shell utilisés par Packer ?
+\end{questions}
+
+\section{Amélioration de la configuration}
+
+\begin{questions}
+    \question Ajoutez un serveur apache2 via un provisionner shell "inline" dans le fichier de configuration et rebuildez la VM.
+    \question Désactivez IPV6 lors du build de la VM.
+    \question Lors du "build" rajoutez dans le fichier /etc/hosts de la VM la ligne suivante:
+    10.255.255.135  registry.iutbeziers.fr
+    \question Ajoutez un wordpress \footnote{voir \url{https://galaxy.ansible.com/Oefenweb/wordpress}} via Ansible dans le build de votre VM ?
+    \question Utilisez cette source pour construire une image KVM/libvirt.
+
+    \begin{bashcode}
+source "qemu" "qemu" {
+    boot_command     = ["<esc><wait>", "auto ", "net.ifnames=0 ",   
+                       "preseed/url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/debian-12/preseed.cfg ", "<enter>"]
+    boot_wait        = "15s"
+    disk_size        = "${var.disk_size}"
+    headless         = "${var.headless}"
+    http_directory   = "http"
+    iso_checksum     = "${var.iso_checksum_type}:${var.iso_checksum}"
+    iso_url          = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.1.0-amd64-netinst.iso"
+    output_directory = "output-debian-12-amd64-small-qemu"
+    qemuargs         = [["-m", "${var.memory}"], ["-smp", "${var.cpus}"]]
+    shutdown_command = "sudo systemctl poweroff"
+    ssh_password     = "vagrant"
+    ssh_timeout      = "${var.ssh_timeout}"
+    ssh_username     = "vagrant"
+    vm_name          = "packer-debian-12-amd64-kvm-small"
+}
+    \end{bashcode}
+    \begin{solution}
+        \begin{bashcode}
+sudo bash -c "cat <<_EOF >> /etc/hosts
+10.255.255.135  registry.iutbeziers.fr
+_EOF
+"
+sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+
+sudo bash -c "cat <<_EOF >> /etc/sysctl.conf
+net.ipv6.conf.all.disable_ipv6=1
+net.ipv6.conf.default.disable_ipv6=1
+_EOF
+"
+sudo bash -c "cat <<_EOF >> /etc/hosts
+registry.iutbeziers.fr 10.255.255.135
+_EOF
+"
+\end{bashcode}
+\end{solution}
+\end{questions}
+
+
+
+\end{document}

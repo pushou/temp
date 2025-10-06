@@ -1,0 +1,4 @@
+terraform init
+terraform plan
+terraform apply --auto-approve
+qemu-img resize jammy-server-cloudimg-amd64.img +30G

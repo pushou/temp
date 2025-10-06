@@ -1,0 +1,332 @@
+% !TEX root = TP-terraform.tex
+\input{../inc/encommun.tex}
+
+\usepackage{titlepic}
+\title{Terraform \& Pulumi}
+\titlepic{\includegraphics[width=0.2\textwidth]{logo-cloudlab-red.png}}
+
+\date{octobre 2024}
+
+% pour afficher (ou pas) les réponses dans le document
+%\printanswers
+\noprintanswers
+
+\usepackage{graphicx}
+\graphicspath{{./images/}}
+
+
+
+\author{Jean-Marc Pouchoulon}
+
+% pour afficher ( ou pas) les réponses dans le document
+%\printanswers
+
+
+\begin{document}
+\maketitle
+\section{Avant de commencer}
+
+\subsection{Pré-requis, recommandations et notation du TP.}
+
+Vous devez avoir Docker, KVM/libvirt installés sur votre machine afin de réaliser ce TP.
+Pour certaines parties une serveur proxmox sera nécessaire.
+Terrafom doit être installé sur votre machine. (voir \href
+{https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli}{la procédure officielle})
+
+
+Installez Terraform en suivant \href{https://developer.hashicorp.com/packer/tutorials/docker-get-started/get-started-install-cli}{la procédure officielle}
+
+Vous ferez valider votre travail par l'enseignant à la fin de chaque partie.
+
+\section{Terraform \& Docker}
+
+\subsection{Commandes de bases Terraform}
+\begin{questions}
+    
+\question A l'aide de ces deux fichiers providers.tf main.tf générez un conteneur docker avec Terraform. 
+
+\begin{terraformcode}
+    # fichier providers.tf
+
+    terraform {
+        required_providers {
+          docker = {
+            source  = "kreuzwerker/docker"
+            version = "3.0.2"
+          }
+        }
+      }
+
+    provider "docker" {
+        host = "unix:///var/run/docker.sock"
+    }
+
+\end{terraformcode}
+
+\begin{terraformcode} 
+      # fichier main.tf    
+      # Pulls the image
+      resource "docker_image" "ubuntu" {
+        name = "ubuntu:latest"
+      }
+      
+      # Create a container
+      resource "docker_container" "foo" {
+        image = docker_image.ubuntu.image_id
+        name  = "foo"
+      }
+\end{terraformcode}
+
+Utilisez les commandes suivantes:
+\begin{bashcode}
+  terraform init 
+  terraform validate
+\end{bashcode}
+
+\question Que contient la directory .terraform ? le fichier .terraform.lock.hcl (voir \url{https://developer.hashicorp.com/terraform/tutorials/cli/init} pour vous aidez)
+
+\question Rajoutez le provider suivante et refaite un validate. que se passe-t-il ?
+
+\begin{terraformcode}
+random = {
+  source  = "hashicorp/random"
+  version = "3.5.1"
+}
+\end{terraformcode}
+\question Générez un plan d'exécution et examinez-le avec les commandes suivantes:
+
+\begin{bashcode}
+terraform plan -out "tfplan"
+terraform show "tfplan"
+\end{bashcode}
+
+\question Appliquez le plan d'exécution avec la commande suivante:
+
+\begin{bashcode}
+terraform  apply -auto-approve "tfplan"
+\end{bashcode}
+
+\question Utilisez l'instruction count=3 afin d'obtenir 3 conteneurs docker et modifiez le code en utilisant la variable \$\{count.index\} .
+
+\question 
+\end{questions}
+
+\subsection{Un peu plus loin avec Docker et Terraform}
+\begin{questions}
+
+\question Modifiez ce code afin d'obtenir une instance de container en état running en utilisant les instructions suivantes :
+\begin{terraformcode}
+must_run = true
+publish_all_ports = true 
+command = [.... 
+\end{terraformcode}
+\begin{solution}
+\begin{terraformcode}
+
+    # Pulls the image
+    resource "docker_image" "ubuntu" {
+      name = "ubuntu:latest"
+    }
+    
+    # Create a container
+    resource "docker_container" "foo" {
+      image = docker_image.ubuntu.image_id
+      name  = "foo"
+      must_run          = true
+      publish_all_ports = true
+    
+      command = [
+        "tail",
+        "-f",
+        "/dev/null"
+      ]
+    }
+\end{terraformcode}
+
+
+\end{solution}
+
+
+\question Modifiez ce code afin d'obtenir une instance running de registry.iutbeziers.fr/debianiut:latest 
+
+Vous devez avoir l'image sur votre machine avant de lancer le code terraform.
+
+Vous devez référencer l'image de cette façon:
+
+\begin{terraformcode}
+data "docker_image" "debianiut" {
+    name = "registry.iutbeziers.fr/debianiut:latest"
+  }      
+# image registry.iutbeziers.fr/debianiut:latest
+  resource "docker_image" "debianiut" {
+  name = data.docker_image.debianiut.name
+}
+\end{terraformcode}
+et l'utilisez ensuite dans la ressource docker\_container.
+
+\begin{solution}
+\begin{terraformcode}
+    data "docker_image" "debianiut" {
+        name = "registry.iutbeziers.fr/debianiut:latest"
+      }
+      
+      # Pulls the image
+      resource "docker_image" "debianiut" {
+        name = data.docker_image.debianiut.name
+      }
+      
+      # Create a container
+      resource "docker_container" "debianiut" {
+        image = docker_image.debianiut.name
+        name  = "debianiut"
+        must_run          = true
+        publish_all_ports = true
+      
+        command = [
+          "tail",
+          "-f",
+          "/dev/null"
+        ]
+      }
+\end{terraformcode}
+\end{solution}
+
+\question Supprimez votre environnement containérisés maintenant.
+
+\begin{bashcode}
+terraform destroy -auto-approve 
+\end{bashcode}
+
+\question  Instanciez des containers sur un VM distante.
+
+Tout d'abord en utilisant SSH.
+ 
+\begin{terraformcode}
+provider "docker" {
+        host     = "ssh://user@remote-host:22"
+        ssh_opts = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"]
+}
+\end{terraformcode}
+
+
+Puis rendez accessible Docker en remote sur le port tcp 2375 via une socket TCP en éditant le service Docker:
+
+\begin{bashcode}
+systemctl edit docker.service    
+\end{bashcode}
+Rajouter les lignes suivantes:
+\begin{inicode}
+[Service]
+ExecStart=
+ExecStart=/usr/bin/dockerd -H fd:// -H tcp://0.0.0.0:2375
+\end{inicode}
+Redémarrez le service Docker.
+
+
+Modifiez votre providers.tf afin d'utiliser le port tcp 2375:
+\begin{terraformcode}
+    provider "docker" {
+      host = "tcp://your-host-ip:2375/"
+    }
+\end{terraformcode}
+nb: cette configuration ouverte à tout n'est pas sécurisée. Il aurait fallu 
+utiliser TLS et des certificats clients.
+
+\end{questions}
+
+
+
+\subsection{Terraform wordpress} 
+
+Utilisez \href{https://connect.ed-diamond.com/GNU-Linux-Magazine/glmf-240/utilisez-terraform-pour-vos-projets-docker}{l'article} sous "Creative Common" de Julien Morot pour créer un wordpress avec Terraform.
+
+
+\section{Terraform et KVM/libvirt}
+
+\subsection{pré-requis}
+Tout d'abord vous devez éditer le fichier /etc/libvirt/qemu.conf et remplir la valeur suivante:
+\begin{textcode}
+security_driver = "none"
+\end{textcode}
+Puis redémarrer le service libvirt:
+\begin{bashcode}
+systemctl restart libvirtd
+\end{bashcode}
+
+On va utiliser le \href{https://registry.terraform.io/providers/dmacvicar/libvirt/latest}{provider libvirt} pour terraform.
+Du à un bug il vous faut utiliser la version 1.5.7 de terraform. (voir \url{https://releases.hashicorp.com/terraform/1.5.7/})
+
+\begin{terraformcode}
+terraform {
+  required_providers {
+    libvirt = {
+      source = "dmacvicar/libvirt"
+    }
+  }
+  # instance the provider
+  provider "libvirt" {
+    uri = "qemu:///system"
+  }
+}
+
+\end{terraformcode}
+
+\subsection{Créez une machine virtuelle ubuntu KVM via Terraform}
+
+Vous pouvez vous inspirer du \href{https://blog.stephane-robert.info/post/terraform-provider-libvirt} {code de Stéphane Robert}.
+La configuration de la machine virtuelle utilisera cloud-init pour "customiser"  la machine virtuelle.
+
+
+\subsection{Créez une machine virtuelle Ubuntu et Rocky via Terraform sur Kvm}
+
+Récupérez le projet :
+\begin{bashcode}
+git clone https://github.com/pushou/terraform-student.git  
+\end{bashcode}
+
+Récupérer les images cloud suivantes:
+
+\begin{bashcode}
+wget https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2
+wget https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+\end{bashcode}
+
+Re-dimensionnez les images et changer les mots de passes avec les commandes suivantes:
+\begin{bashcode}
+qemu-img info jammy-server-cloudimg-amd64.img
+qemu-img resize jammy-server-cloudimg-amd64.img +20G
+qemu-img info Rocky-9-GenericCloud.latest.x86_64.qcow2
+qemu-img resize  Rocky-9-GenericCloud.latest.x86_64.qcow2 +20G 
+mv Rocky-9-GenericCloud.latest.x86_64.qcow2 rocky.qcow2
+mv jammy-server-cloudimg-amd64.img ubuntu.qcow2 
+export LIBGUESTFS_BACKEND=direct
+sudo virt-customize -a ubuntu.qcow2 --root-password password:root
+sudo virt-customize -a rocky.qcow2 --root-password password:root
+sudo virt-customize -a ubuntu.qcow2 --timezone "Europe/Paris"
+sudo virt-customize -a rocky.qcow2 --timezone "Europe/Paris"
+\end{bashcode}
+
+Rajoutez à ce build une machine virtuelle Debian stable.
+
+\section{Création d'un projet Terraform ou Pulumi sur un hyperviseur PROXMOX (>=8)}
+Vous travaillerez en binôme sur cette partie.
+Vous devez avoir un proxmox 8 installé sur un serveur de la salle:
+
+Suivez au choix un des ces deux articles de Julien Briault et Stéphane Robert:
+\begin{itemize}
+
+  %\item \href{https://blog.jbriault.fr/2021/03/26/terraform-proxmox/}{Terraform et Proxmox}
+  \item \href{https://blog.stephane-robert.info/docs/virtualiser/type1/proxmox/terraform/}{Terraform et Proxmox}
+  \item \href{https://blog.jbriault.fr/pulumi-proxmox-cloudinit/}{Pulumi et Proxmox}
+\end{itemize}
+ 
+Attention il vous faudra donner plus de droits qu'indiqués dans les articles au rôle Terraform ou Pulumi 
+pour pouvoir créer des VM.
+
+\begin{bashcode}
+  pveum role add Terraform -privs "VM.Allocate VM.Clone VM.Config.CDROM VM.Config.CPU \
+  VM.Config.Cloudinit VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network \
+  VM.Config.Options VM.Monitor VM.Audit VM.PowerMgmt Datastore.AllocateSpace Datastore.Audit SDN.Use SDN.Audit"
+\end{bashcode}
+
+\end{document}
